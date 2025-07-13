@@ -54,12 +54,6 @@ def main():
 
     x_tr, y_tr, x_te, y_te = get_cifar10()
 
-    x_tr = x_tr[:200]
-    y_tr = y_tr[:200]
-    x_te = x_te[:50]
-    y_te = y_te[:50]
-    print("x_tr:", x_tr.shape, "x_te:", x_te.shape)
-
     num_classes = 10
     y_tr = _one_hot(y_tr, 10)
     y_te = _one_hot(y_te, 10)
