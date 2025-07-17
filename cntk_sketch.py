@@ -359,12 +359,48 @@ class CNTKSketch:
 
         return U
 
+#rescaled taylor helper
+#for cpu runs
+def estimate_alpha_range(X, num_samples=1000):
+    """
+    Estimate distribution of dot products between random pairs of normalized vectors.
+    Args:
+        X: torch.Tensor of shape (n, c, h, w)
+        num_samples: number of dot products to sample
+    Returns:
+        alphas: numpy array of sampled dot products
+    """
+    #double check about the cpu call
+    X_np = X.detach().cpu().numpy().reshape(X.shape[0], -1)  # Flatten to (n, d)
+    X_np = X_np / (np.linalg.norm(X_np, axis=1, keepdims=True) + 1e-8)  # Normalize
+
+    idx = np.random.choice(X_np.shape[0], size=(num_samples, 2), replace=True)
+    alphas = np.array([np.dot(X_np[i], X_np[j]) for i, j in idx])
+    return np.clip(alphas, -1.0, 1.0)
+#for gou runs:
+def estimate_alpha_range_gpu(X, num_samples=1000):
+    X = X.detach()
+    X_flat = X.view(X.size(0), -1)
+    X_flat = X_flat / (X_flat.norm(dim=1, keepdim=True) + 1e-8)
+
+    idx = torch.randint(0, X_flat.size(0), (num_samples, 2), device=X.device)
+    alpha_vals = torch.sum(X_flat[idx[:, 0]] * X_flat[idx[:, 1]], dim=1)
+    return alpha_vals.clamp(-1.0, 1.0).cpu().numpy()  # move only the final result
+
+
 
 def OblvFeatCNTK(cntk_sketch, X):
     n = X.shape[0]
     q = cntk_sketch.q
     filt_size = cntk_sketch.filt_size
 
+    #rescaling block
+    alpha_samples = estimate_alpha_range(X)  # sample ~1000 dot products
+    a_min, a_max = np.percentile(alpha_samples, [5, 95])
+    center = 0.5 * (a_min + a_max)
+    scale = 0.5 * (a_max - a_min)
+    
+        
     L = cntk_sketch.L
     Normalizer = [0 for i in range(L)]
     for h in range(L):
