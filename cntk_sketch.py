@@ -93,7 +93,67 @@ def kdotrelu(q, h):
     coeff[coeff < 0.00001] = 0
 
     return coeff
+#==================== testing rescaled alphas in Taylor:
 
+
+def krelu_scaled(q, h, center=0.0, scale=1.0):
+    #recursive alpha fla
+    alpha_ = -1.0
+    for i in range(h):
+        alpha_ = (2.0 * alpha_ + (np.sqrt(1 - alpha_ ** 2) + alpha_ * (np.pi - np.arccos(alpha_))) / np.pi) / 3.0
+
+    #scale alpha values here
+    alpha_grid = np.linspace(alpha_, 1.0, num=201)
+    alpha_scaled = (alpha_grid - center) / scale
+
+    y = relu_kernel(alpha_grid)
+    #q - degree corresponds to matrix Z dim
+    Z = np.zeros((201, q + 1))
+    Z[:, 0] = np.ones(201)
+    for i in range(q):
+        Z[:, i + 1] = Z[:, i] * np.linspace(alpha_, 1.0, num=201)
+
+    w = y
+    U = Z.T
+
+    #solve QP parametrized by Z matrix of alphas and dependent on degree and w
+    coeff = quadprog_solve_qp(np.dot(U, U.T), -np.dot(U, w),
+                              np.concatenate((Z[0:200, :] - Z[1:201, :], -np.eye(q + 1)), axis=0), np.zeros(q + 201),
+                              Z[200, :][np.newaxis, :], y[200])
+    coeff[coeff < 0.00001] = 0
+
+    return coeff
+
+
+def kdotrelu_scaled(q, h, center=0.0, scale=1.0):
+    alpha_ = -1.0
+    for i in range(h):
+        alpha_ = (1.0 * alpha_ + (np.sqrt(1 - alpha_ ** 2) + alpha_ * (np.pi - np.arccos(alpha_))) / np.pi) / 2.0
+    
+    alpha_grid = np.linspace(alpha_, 1.0, num=201)
+    alpha_scaled = (alpha_grid - center) / scale
+
+    y = relu_kernel_prime(alpha_grid)
+
+    
+    Z = np.zeros((201, q + 1))
+    Z[:, 0] = np.ones(201)
+    for i in range(q):
+        Z[:, i + 1] = Z[:, i] * np.linspace(alpha_, 1.0, num=201)
+
+    weight_ = np.linspace(0.0, 1.0, num=201) ** 2 + 1 / 2
+    w = y * weight_
+    U = Z.T * weight_
+
+    coeff = quadprog_solve_qp(np.dot(U, U.T), -np.dot(U, w),
+                              np.concatenate((Z[0:200, :] - Z[1:201, :], -np.eye(q + 1)), axis=0), np.zeros(q + 201))
+    #=0? coeff bound
+    coeff[coeff < 0.00001] = 0
+
+    return coeff
+
+
+#================== end testing
 
 def TSRHTCmplx(X1, X2, P, D):
     """
