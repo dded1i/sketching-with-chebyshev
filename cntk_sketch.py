@@ -440,7 +440,7 @@ def OblvFeatCNTK(cntk_sketch, X):
     for h in range(1, L - 1):
         #uncomment next line for chebyshev
         #coeff_krelu = chebyshev_coeff(relu_kernel, q, alpha_h(h))
-        coeff_krelu = krelu_rescaled(q, h=h, center=center, scale=scale)
+        coeff_krelu = krelu_scaled(q, h=h, center=center, scale=scale)
 
         
         #coeff_kreludot = kdotrelu(q, h)
