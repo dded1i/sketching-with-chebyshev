@@ -412,7 +412,7 @@ def OblvFeatCNTK(cntk_sketch, X):
         #alpha_dot = alpha_dot_h(h)
         #coeff_kreludot = chebyshev_coeff(relu_kernel_prime, q, alpha_dot)
 
-        coeff_kreludot = kdotrelu_rescaled(q, h=h, center=center, scale=scale)
+        coeff_kreludot = kdotrelu_scaled(q, h=h, center=center, scale=scale)
 
         
         #coeff_kreludot = chebyshev_coeff(relu_kernel_prime, q, domain=[alpha_dot_h, 1.0])
@@ -471,7 +471,7 @@ def OblvFeatCNTK(cntk_sketch, X):
     #alpha_dot = alpha_dot_h(L - 1)
     #coeff_kreludot = chebyshev_coeff(relu_kernel_prime, q, alpha_dot)
 
-    coeff_kreludot = kdotrelu_rescaled(q, h=L - 1, center=center, scale=scale)
+    coeff_kreludot = kdotrelu_scaled(q, h=L - 1, center=center, scale=scale)
 
     Z = cntk_sketch.TensorSketchT(mu_, L - 1)
     Conv_Zdot = torch.zeros((n, len(cntk_sketch.phidot_D[L - 1]), psi_.shape[2], psi_.shape[3]), dtype=torch.cfloat,
