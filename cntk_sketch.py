@@ -373,8 +373,9 @@ def estimate_alpha_range(X, num_samples=1000):
     #double check about the cpu call
     X_np = X.detach().cpu().numpy().reshape(X.shape[0], -1)  # Flatten to (n, d)
     X_np = X_np / (np.linalg.norm(X_np, axis=1, keepdims=True) + 1e-8)  # Normalize
-
+    #get 1000 random pairs of indeces
     idx = np.random.choice(X_np.shape[0], size=(num_samples, 2), replace=True)
+    #compute dot products
     alphas = np.array([np.dot(X_np[i], X_np[j]) for i, j in idx])
     return np.clip(alphas, -1.0, 1.0)
 #for gou runs:
