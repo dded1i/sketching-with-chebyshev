@@ -93,67 +93,7 @@ def kdotrelu(q, h):
     coeff[coeff < 0.00001] = 0
 
     return coeff
-#==================== testing rescaled alphas in Taylor:
 
-
-def krelu_scaled(q, h, center=0.0, scale=1.0):
-    #recursive alpha fla
-    alpha_ = -1.0
-    for i in range(h):
-        alpha_ = (2.0 * alpha_ + (np.sqrt(1 - alpha_ ** 2) + alpha_ * (np.pi - np.arccos(alpha_))) / np.pi) / 3.0
-
-    #scale alpha values here
-    alpha_grid = np.linspace(alpha_, 1.0, num=201)
-    alpha_scaled = (alpha_grid - center) / scale
-
-    y = relu_kernel(alpha_grid)
-    #q - degree corresponds to matrix Z dim
-    Z = np.zeros((201, q + 1))
-    Z[:, 0] = np.ones(201)
-    for i in range(q):
-        Z[:, i + 1] = Z[:, i] * np.linspace(alpha_, 1.0, num=201)
-
-    w = y
-    U = Z.T
-
-    #solve QP parametrized by Z matrix of alphas and dependent on degree and w
-    coeff = quadprog_solve_qp(np.dot(U, U.T), -np.dot(U, w),
-                              np.concatenate((Z[0:200, :] - Z[1:201, :], -np.eye(q + 1)), axis=0), np.zeros(q + 201),
-                              Z[200, :][np.newaxis, :], y[200])
-    coeff[coeff < 0.00001] = 0
-
-    return coeff
-
-
-def kdotrelu_scaled(q, h, center=0.0, scale=1.0):
-    alpha_ = -1.0
-    for i in range(h):
-        alpha_ = (1.0 * alpha_ + (np.sqrt(1 - alpha_ ** 2) + alpha_ * (np.pi - np.arccos(alpha_))) / np.pi) / 2.0
-    
-    alpha_grid = np.linspace(alpha_, 1.0, num=201)
-    alpha_scaled = (alpha_grid - center) / scale
-
-    y = relu_kernel_prime(alpha_grid)
-
-    
-    Z = np.zeros((201, q + 1))
-    Z[:, 0] = np.ones(201)
-    for i in range(q):
-        Z[:, i + 1] = Z[:, i] * np.linspace(alpha_, 1.0, num=201)
-
-    weight_ = np.linspace(0.0, 1.0, num=201) ** 2 + 1 / 2
-    w = y * weight_
-    U = Z.T * weight_
-
-    coeff = quadprog_solve_qp(np.dot(U, U.T), -np.dot(U, w),
-                              np.concatenate((Z[0:200, :] - Z[1:201, :], -np.eye(q + 1)), axis=0), np.zeros(q + 201))
-    #=0? coeff bound
-    coeff[coeff < 0.00001] = 0
-
-    return coeff
-
-
-#================== end testing
 
 def TSRHTCmplx(X1, X2, P, D):
     """
@@ -359,49 +299,12 @@ class CNTKSketch:
 
         return U
 
-#rescaled taylor helper
-#for cpu runs
-def estimate_alpha_range(X, num_samples=1000):
-    """
-    Estimate distribution of dot products between random pairs of normalized vectors.
-    Args:
-        X: torch.Tensor of shape (n, c, h, w)
-        num_samples: number of dot products to sample
-    Returns:
-        alphas: numpy array of sampled dot products
-    """
-    #double check about the cpu call
-    X_np = X.detach().cpu().numpy().reshape(X.shape[0], -1)  # Flatten to (n, d)
-    X_np = X_np / (np.linalg.norm(X_np, axis=1, keepdims=True) + 1e-8)  # Normalize
-    #get 1000 random pairs of indeces
-    idx = np.random.choice(X_np.shape[0], size=(num_samples, 2), replace=True)
-    #compute dot products
-    alphas = np.array([np.dot(X_np[i], X_np[j]) for i, j in idx])
-    return np.clip(alphas, -1.0, 1.0)
-#for gou runs:
-def estimate_alpha_range_gpu(X, num_samples=1000):
-    X = X.detach()
-    X_flat = X.view(X.size(0), -1)
-    X_flat = X_flat / (X_flat.norm(dim=1, keepdim=True) + 1e-8)
-
-    idx = torch.randint(0, X_flat.size(0), (num_samples, 2), device=X.device)
-    alpha_vals = torch.sum(X_flat[idx[:, 0]] * X_flat[idx[:, 1]], dim=1)
-    return alpha_vals.clamp(-1.0, 1.0).cpu().numpy()  # move only the final result
-
-
 
 def OblvFeatCNTK(cntk_sketch, X):
     n = X.shape[0]
     q = cntk_sketch.q
     filt_size = cntk_sketch.filt_size
 
-    #rescaling block
-    alpha_samples = estimate_alpha_range(X)  # sample ~1000 dot products
-    a_min, a_max = np.percentile(alpha_samples, [5, 95])
-    center = 0.5 * (a_min + a_max)
-    scale = 0.5 * (a_max - a_min)
-    
-        
     L = cntk_sketch.L
     Normalizer = [0 for i in range(L)]
     for h in range(L):
@@ -414,9 +317,7 @@ def OblvFeatCNTK(cntk_sketch, X):
 
     Z = cntk_sketch.TensorSketchT(mu_, 0)
 
-    #coeff_krelu =chebyshev_coeff(relu_kernel, q, -1)
-    #rescaling try1:
-    coeff_krelu = krelu_scaled(q, h=0, center=center, scale=scale)
+    coeff_krelu =chebyshev_coeff(relu_kernel, q, -1)
 
 
     Conv_Z = torch.zeros(
@@ -438,20 +339,11 @@ def OblvFeatCNTK(cntk_sketch, X):
     mu_ = psi_ / torch.sqrt(Normalizer[1]).unsqueeze(1)
 
     for h in range(1, L - 1):
-        #uncomment next line for chebyshev
-        #coeff_krelu = chebyshev_coeff(relu_kernel, q, alpha_h(h))
-        coeff_krelu = krelu_scaled(q, h=h, center=center, scale=scale)
+        coeff_krelu = chebyshev_coeff(relu_kernel, q, alpha_h(h))
 
-        
         #coeff_kreludot = kdotrelu(q, h)
-
-        #uncomment next 2 lines for chebyshev
-        #alpha_dot = alpha_dot_h(h)
-        #coeff_kreludot = chebyshev_coeff(relu_kernel_prime, q, alpha_dot)
-
-        coeff_kreludot = kdotrelu_scaled(q, h=h, center=center, scale=scale)
-
-        
+        alpha_dot = alpha_dot_h(h)
+        coeff_kreludot = chebyshev_coeff(relu_kernel_prime, q, alpha_dot)
         #coeff_kreludot = chebyshev_coeff(relu_kernel_prime, q, domain=[alpha_dot_h, 1.0])
 
         Z = cntk_sketch.TensorSketchT(mu_, h)
@@ -504,11 +396,8 @@ def OblvFeatCNTK(cntk_sketch, X):
     #coeff_kreludot = kdotrelu(q, L - 1)
     #coeff_kreludot = chebyshev_coeff(relu_kernel_prime, q, alpha_left=alpha_dot_h(h))
 
-    #uncomment for chebyshev
-    #alpha_dot = alpha_dot_h(L - 1)
-    #coeff_kreludot = chebyshev_coeff(relu_kernel_prime, q, alpha_dot)
-
-    coeff_kreludot = kdotrelu_scaled(q, h=L - 1, center=center, scale=scale)
+    alpha_dot = alpha_dot_h(L - 1)
+    coeff_kreludot = chebyshev_coeff(relu_kernel_prime, q, alpha_dot)
 
     Z = cntk_sketch.TensorSketchT(mu_, L - 1)
     Conv_Zdot = torch.zeros((n, len(cntk_sketch.phidot_D[L - 1]), psi_.shape[2], psi_.shape[3]), dtype=torch.cfloat,
